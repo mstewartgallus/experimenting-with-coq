@@ -12,7 +12,7 @@ main = do
   loop s0 identity (\_ -> undefined)
 
 identity :: Term v
-identity = App (Lam_ $ \x -> (Var x)) (Lam_ $ \y -> (Var y))
+identity = App (Lam $ \x -> (Var x)) (Lam $ \y -> (Var y))
 
 right :: (Font a1) -> Font a1
 right f =
@@ -22,7 +22,7 @@ right f =
 pretty :: Show v => Font v -> Term v -> String
 pretty fnt expr = case expr of
   Var x -> "v" ++ show x
-  Lam_ f ->
+  Lam f ->
     let x = head fnt
         l = left fnt
      in "(λ v" ++ show x ++ ". " ++ pretty l (f x) ++ ")"
@@ -31,13 +31,13 @@ pretty fnt expr = case expr of
         r = right fnt
      in "(" ++ pretty l e_f ++ " " ++ pretty r e_x ++ ")"
 
-loop :: (Show v, Eq v) => Font v -> Term v -> Store v -> IO ()
+loop :: (Show v, Eq v) => Font v -> Term v -> Heap v -> IO ()
 loop fnt e0 s0 = do
   let l = left fnt
   let r = right fnt
   putStrLn (pretty l e0)
   case cbn (==) l e0 s0 of
-    Just (s1, e1) -> loop r e1 s1
+    Just (Build_state e1 s1) -> loop r e1 s1
     Nothing -> return ()
 
 data Tag = Tag Int (IORef ())
