@@ -1,33 +1,43 @@
 module Main where
 
 import Data.IORef
--- import Prelude hiding (pure, fst, snd, lookup)
 import Data.Word (Word64)
 import Step
 import System.IO.Unsafe (unsafeInterleaveIO)
+import Prelude hiding (head)
 
 main :: IO ()
 main = do
-  s0 <- streamTags
-  let (s1, t) = identity s0
-  loop s1 t
+  s0 <- fontTags
+  loop s0 identity (\_ -> undefined)
 
-identity :: State (Stream v) (Term v)
-identity (Build_stream x (Build_stream y t)) =
-  (t, App (Lam x (Var x)) (Lam y (Var y)))
+identity :: Term v
+identity = App (Lam_ $ \x -> (Var x)) (Lam_ $ \y -> (Var y))
 
-pretty :: Show v => Term v -> String
-pretty expr = case expr of
+right :: (Font a1) -> Font a1
+right f =
+  case f of
+    Build_font _ left0 _ -> left0
+
+pretty :: Show v => Font v -> Term v -> String
+pretty fnt expr = case expr of
   Var x -> "v" ++ show x
-  Lam x e -> "(λ v" ++ show x ++ ". " ++ pretty e ++ ")"
-  App e_f e_x -> "(" ++ pretty e_f ++ " " ++ pretty e_x ++ ")"
+  Lam_ f ->
+    let x = head fnt
+        l = left fnt
+     in "(λ v" ++ show x ++ ". " ++ pretty l (f x) ++ ")"
+  App e_f e_x ->
+    let l = left fnt
+        r = right fnt
+     in "(" ++ pretty l e_f ++ " " ++ pretty r e_x ++ ")"
 
-loop :: (Show v, Eq v) => Stream v -> Term v -> IO ()
-loop s0 e = do
-  putStrLn (pretty e)
-  let (s1, e') = step (==) e s0
-  case e' of
-    Just e'' -> loop s1 e''
+loop :: (Show v, Eq v) => Font v -> Term v -> Store v -> IO ()
+loop fnt e0 s0 = do
+  let l = left fnt
+  let r = right fnt
+  putStrLn (pretty l e0)
+  case cbn (==) l e0 s0 of
+    Just (s1, e1) -> loop r e1 s1
     Nothing -> return ()
 
 data Tag = Tag Int (IORef ())
@@ -38,31 +48,33 @@ instance Eq Tag where
 instance Show Tag where
   show (Tag hash _) = show hash
 
-streamTags :: IO (Stream Tag)
-streamTags = do
-  refs <- streamRefs
-  ns <- streamHash
+fontTags :: IO (Font Tag)
+fontTags = do
+  refs <- fontRefs
+  ns <- fontHash
   return (zipTags refs ns)
 
-zipTags :: Stream (IORef ()) -> Stream Int -> Stream Tag
-zipTags ~(Build_stream ref rt) ~(Build_stream n nt) = Build_stream (Tag n ref) (zipTags rt nt)
+zipTags :: Font (IORef ()) -> Font Int -> Font Tag
+zipTags ~(Build_font ref rl rr) ~(Build_font n nl nr) = Build_font (Tag n ref) (zipTags rl nl) (zipTags rr nr)
 
-streamRefs :: IO (Stream (IORef ()))
-streamRefs = go
+fontRefs :: IO (Font (IORef ()))
+fontRefs = go
   where
     go = unsafeInterleaveIO $ do
       ref <- unsafeInterleaveIO $ newIORef ()
-      t <- go
-      return (Build_stream ref t)
+      l <- go
+      r <- go
+      return (Build_font ref l r)
 
-streamHash :: IO (Stream Int)
-streamHash = do
+fontHash :: IO (Font Int)
+fontHash = do
   let seed = 4
   ix <- newIORef seed
   let go = unsafeInterleaveIO $ do
         newIx <- unsafeInterleaveIO $ atomicModifyIORef ix (\n -> (hash n, fromIntegral n))
-        t <- go
-        return (Build_stream newIx t)
+        l <- go
+        r <- go
+        return (Build_font newIx l r)
   go
 
 -- lcgs are dumb but whatever
