@@ -90,15 +90,13 @@ data Term v =
  | App (Term v) (Term v)
  | Lam v (Term v)
 
-type Tm v = Term v
-
 data D v =
    Var'
- | Lapp' (Tm v) (Term v) (D v)
- | Rapp' (Term v) (Tm v) (D v)
- | Lam' v (Tm v) (D v)
+ | Lapp' (Term v) (Term v) (D v)
+ | Rapp' (Term v) (Term v) (D v)
+ | Lam' v (Term v) (D v)
 
-diff :: a1 -> (Tm a1) -> (Tm a1) -> (D a1) -> Tm a1
+diff :: a1 -> (Term a1) -> (Term a1) -> (D a1) -> Term a1
 diff x h _ i =
   case i of {
    Var' -> h;
@@ -118,10 +116,12 @@ lookup x h e =
      Prelude.True -> Prelude.Just (var_helper x y);
      Prelude.False -> Prelude.Nothing};
    App e0 e1 ->
-    case lookup x h e0 of {
+    let {s = lookup x h e0} in
+    let {s0 = lookup x h e1} in
+    case s of {
      Prelude.Just e'0 -> Prelude.Just (Lapp' e0 e1 e'0);
      Prelude.Nothing ->
-      case lookup x h e1 of {
+      case s0 of {
        Prelude.Just e'1 -> Prelude.Just (Rapp' e0 e1 e'1);
        Prelude.Nothing -> Prelude.Nothing}};
    Lam y e0 ->

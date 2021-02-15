@@ -1,18 +1,16 @@
 Import IfNotations.
+Require Import Coq.Program.Basics.
 
-Variant yeanay (a : Set) (b : Prop) :=
-| yea : a -> yeanay a b
-| nay : b -> yeanay a b.
 
 Class EqDec {v : Set} := {
-  eq_decide : forall (x y : v), {x = y} + {x <> y}
+  eq_decide (x y : v) : {x = y} + {x <> y}
 }.
 
 Definition id (s : Set) := s.
 
 (* Fix me put in laws *)
 Class Functor (f : Set -> Set) := {
-  map {a b : Set}: (a -> b) -> f a -> f b
+  map {a b : Set} : (a -> b) -> f a -> f b
 }.
 
 Class Monad (m : Set -> Set) `(Functor m) := {
@@ -142,9 +140,9 @@ Section term.
 Context { v : Set }.
 
 Inductive term : Set :=
-| var : v -> term
-| app : term -> term -> term
-| lam : v -> term -> term
+| var ( _ : v)
+| app (_ : term) (_ : term)
+| lam (_ : v) (_ : term)
 .
 
 End term.
@@ -188,75 +186,71 @@ Import TermNotation.
 
 Context {v : Set}.
 
-Definition tm := term (v := v).
-Definition term' := tm -> tm.
+Definition term' := term (v := v) -> term (v := v).
 
 Variable x : v.
 
 Reserved Notation "∈ e" (at level 10).
 Reserved Notation "∉ e" (at level 10).
 
-Inductive occurs : tm -> Prop :=
+Inductive occurs : term -> Prop :=
 | in_var : ∈ (var x)
-| in_lapp : forall e0 e1, ∈ e0 -> ∈ _{ e0 e1 }
-| in_rapp : forall e0 e1, ∈ e1 -> ∈ _{ e0 e1 }
-| in_lam : forall y e0, ∈ e0 -> ∈ _{ fun y => e0 }
+| in_lapp {e0 e1} : ∈ e0 -> ∈ _{ e0 e1 }
+| in_rapp {e0 e1} : ∈ e1 -> ∈ _{ e0 e1 }
+| in_lam {y e0} : ∈ e0 -> ∈ _{ fun y => e0 }
 where "∈ e" := (occurs e).
 
-Inductive not_occurs : tm -> Prop :=
-| not_var : forall (y : v), x <> y -> ∉ (var y)
-| not_app : forall e0 e1, ∉ e0 -> ∉ e1 -> ∉ _{ e0 e1 }
-| not_lam : forall y e0, ∉ e0 -> ∉ _{ fun y => e0 }
+Inductive not_occurs : term -> Prop :=
+| not_var {y} : x <> y -> ∉ (var y)
+| not_app {e0 e1} : ∉ e0 -> ∉ e1 -> ∉ _{ e0 e1 }
+| not_lam {y e0} : ∉ e0 -> ∉ _{ fun y => e0 }
 where "∉ e" := (not_occurs e).
 
-Inductive D : tm -> Set :=
+Inductive D : term -> Set :=
 | var' : D (var x)
-| lapp' : forall e0 e1, D e0 -> D _{ e0 e1 }
-| rapp' : forall e0 e1, D e1 -> D _{ e0 e1 }
-| lam' : forall y e0, D e0 -> D _{ fun y => e0 }
+| lapp' {e0 e1} : D e0 -> D _{ e0 e1 }
+| rapp' {e0 e1} : D e1 -> D _{ e0 e1 }
+| lam' {y e0} : D e0 -> D _{ fun y => e0 }
 .
 
 Section atpoint.
-Variable h : tm.
+Variable h : term (v := v).
 
 Reserved Notation "∂ y | ∂ x" (at level 0).
 
 Fixpoint diff e (i : D e) :=
 match i with
 | var' => h
-| lapp' e0 e1 i0 => _{ ${∂e0|∂i0} e1 }
-| rapp' e0 e1 i1 => _{ e0 ${ ∂e1 | ∂i1 } }
-| lam' y e0 i0 => _{ fun y => ${ ∂e0|∂i0 } }
+| @lapp' e0 e1 i0 => _{ ${∂e0|∂i0} e1 }
+| @rapp' e0 e1 i1 => _{ e0 ${ ∂e1 | ∂i1 } }
+| @lam' y e0 i0 => _{ fun y => ${ ∂e0|∂i0 } }
 end where "∂ e | ∂ i" := (diff e i).
 
 End atpoint.
 
-Definition var_helper y : x = y -> D (var y).
+Definition var_helper {y} : x = y -> D (var y).
 intro.
 rewrite <- H.
 apply var'.
 Defined.
 
-Fixpoint lookup `{EqDec v} (e : term) : yeanay (D e) (∉ e) :=
+Fixpoint lookup `{EqDec v} e : D e + { ∉ e } :=
 match e with
 | var y =>
    match eq_decide x y with
-    | left _ eq => yea _ _ (var_helper _ eq)
-    | right _ neq => nay _ _ (not_var _ neq)
+    | left _ eq => inleft (var_helper eq)
+    | right _ neq => inright (not_var neq)
    end
 | app e0 e1 =>
-   match lookup e0 with
-   | yea _ _ e'0 => yea _ _ (lapp' e0 e1 e'0)
-   | nay _ _ n0 =>
-     match lookup e1 with
-       | yea _ _ e'1 => yea _ _ (rapp' e0 e1 e'1)
-       | nay _ _ n1 => nay _ _ (not_app _ _ n0 n1)
-     end
+   match (lookup e0, lookup e1) with
+   | (inleft e'0, _) => inleft (lapp' e'0)
+   | (_, inleft e'1) => inleft (rapp' e'1)
+   | (inright n0, inright n1) => inright (not_app n0 n1)
    end
 | lam y e0 =>
    match lookup e0 with
-     | yea _ _ e'0 => yea _ _ (lam' y e0 e'0)
-     | nay _ _ n0 => nay _ _ (not_lam _ _ n0)
+     | inleft e'0 => inleft (lam' e'0)
+     | inright n0 => inright (not_lam n0)
    end
 end .
 
@@ -339,7 +333,7 @@ Not sure how to double check/formally prove capture is actually avoided.
 Fixpoint step `{EqDec v} e : vars (option term):=
 match e with
 | _{ (fun x => e0) e1 } =>
-  if lookup x e0 is yea _ _ ix then do
+  if lookup x e0 is inleft ix then do
     e'1 <- rename nil e1 ; do
     e''1 <- rename nil e1 ;
     pure (Some (let e' := diff x e'1 e0 ix in _{ (fun x => e')  e''1 }))
@@ -362,8 +356,8 @@ Require Extraction.
 Extraction Language Haskell.
 Extract Inductive bool => "Prelude.Bool" ["Prelude.True" "Prelude.False"].
 Extract Inductive sumbool => "Prelude.Bool" ["Prelude.True" "Prelude.False"].
+Extract Inductive sumor => "Prelude.Maybe" ["Prelude.Just" "Prelude.Nothing"].
 Extract Inductive option => "Prelude.Maybe" ["Prelude.Just" "Prelude.Nothing"].
-Extract Inductive yeanay => "Prelude.Maybe" ["Prelude.Just" "Prelude.Nothing"].
 Extract Inductive prod => "(,)" ["(,)"].
 Extract Inductive unit => "()" ["()"].
 Extract Inductive list => "[]" ["[]" "(:)"].
