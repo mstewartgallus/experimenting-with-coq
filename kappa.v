@@ -4,22 +4,16 @@ Class EqDec {v : Set} := {
   eq_decide (x y : v) : {x = y} + {x <> y}
 }.
 
-Section term.
-(* I define terms in a parameteric higher order abstract style.
-   As we go along variables become a sort of address/pointer.
- *)
-Variable v : Set.
 
-Inductive term :=
-| var (_ : v)
-| pass (_ : term) (_ : term)
-| lam (_ : v -> term)
-.
+Class Term {t : Set} := {
+  app : t -> t -> t ;
+  lam : (t -> t) -> t
+}.
 
 Declare Custom Entry lam.
 Notation "_{ e }" := e (e custom lam at level 99).
 Notation "x" := x (in custom lam at level 0, x constr at level 0).
-Notation "f x" := (pass f x) (in custom lam at level 1, left associativity).
+Notation "f x" := (app f x) (in custom lam at level 1, left associativity).
 Notation "'fun' x => y" :=
   (lam (fun x => y)) (in custom lam at level 90,
                      x ident,
@@ -28,7 +22,24 @@ Notation "'fun' x => y" :=
 Notation "( x )" := x (in custom lam, x at level 99).
 Notation "${ x }" := x (in custom lam, x constr at level 0).
 
+Section term.
+
+(* I define terms in a parameteric higher order abstract style.
+   As we go along variables become a sort of address/pointer.
+ *)
+Variable v : Set.
+
+Inductive term :=
+| var (_ : v)
+| pass (_ : term) (_ : term)
+| lam_ (_ : v -> term)
+.
+
 Coercion var : v >-> term.
+Instance term_term : @Term term := {
+  app := pass ;
+  lam f := lam_ (fun x => f x)
+}.
 
 (* My intuition is that a stack is kind of like a one hole context/evaluation context.
    An alternate representation might be:
@@ -63,8 +74,9 @@ Variant step: model -> model -> Prop :=
    s |- E[k| e0 e1] ~> s |- E[fun x => _{ ${k x} e1 }| e0]
 
 | step_lam `{EqDec v} s k f x e:
-   s |- E[fun x => _{ ${k x} e } | ${lam f}] ~> put s x e |- E[k|${f x}]
+   s |- E[fun x => _{ ${k x} e } | ${lam_ f}] ~> put s x e |- E[k|${f x}]
 where "st ~> st'" := (step st st').
+
 
 (* FIXME I need to think of a less misleading name, the spec is very weak currently *)
 (*
@@ -101,8 +113,8 @@ Fixpoint go `{EqDec v} (fnt : font) s k e : option state :=
 match e with
 | var x => Some (s, k, lookup s x)
 
-| _{ e0 e1 } => Some (s, lpass k e1, e0)
-| lam f =>
+| pass e0 e1 => Some (s, lpass k e1, e0)
+| lam_ f =>
    if k is lpass k' e0
    then
      let x := head fnt in
