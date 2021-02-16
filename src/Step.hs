@@ -22,12 +22,12 @@ data Term' v =
 data Ck v =
    Build_ck (Term v) (Term' v)
 
-type Environ v = v -> Term v
+type Heap v = v -> Term v
 
 data State v =
-   Build_state (Environ v) (Ck v)
+   Build_state (Heap v) (Ck v)
 
-put :: (EqDec a1) -> (a1 -> Term a1) -> a1 -> (Term a1) -> Environ a1
+put :: (EqDec a1) -> (a1 -> Term a1) -> a1 -> (Term a1) -> Heap a1
 put h old x e x' =
   case eq_decide h x x' of {
    Prelude.True -> e;
@@ -46,15 +46,15 @@ right f =
   case f of {
    Build_font _ _ right0 -> right0}
 
-go :: (EqDec a1) -> (Font a1) -> (Environ a1) -> (Term' a1) -> (Term 
-      a1) -> Prelude.Maybe (State a1)
-go h fnt g k e =
-  case e of {
-   Var x -> Prelude.Just (Build_state g (Build_ck (g x) k));
-   Pass e0 e1 -> Prelude.Just (Build_state g (Build_ck e0 (Lpass k e1)));
+go :: (EqDec a1) -> (Font a1) -> (Heap a1) -> (Term' a1) -> (Term a1) ->
+      Prelude.Maybe (State a1)
+go h fnt s k c =
+  case c of {
+   Var x -> Prelude.Just (Build_state s (Build_ck (s x) k));
+   Pass c0 c1 -> Prelude.Just (Build_state s (Build_ck c0 (Lpass k c1)));
    Lam f ->
     case k of {
      Hole -> Prelude.Nothing;
      Lpass k' e0 ->
-      let {x = head fnt} in go h (right fnt) (put h g x e0) k' (f x)}}
+      let {x = head fnt} in go h (right fnt) (put h s x e0) k' (f x)}}
 

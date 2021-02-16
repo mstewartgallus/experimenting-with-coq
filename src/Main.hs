@@ -43,7 +43,7 @@ pretty fnt expr = case expr of
 emptyEnv :: v -> Term v
 emptyEnv _ = error "should never happen"
 
-loop :: (Show v, Eq v) => Font v -> Environ v -> Term' v -> Term v -> IO (Term v)
+loop :: (Show v, Eq v) => Font v -> Heap v -> Term' v -> Term v -> IO (Term v)
 loop fnt e0 k0 c0 = do
   let l = left fnt
   let r = right fnt
