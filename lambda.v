@@ -1,126 +1,109 @@
 Import IfNotations.
-Require Import Coq.Program.Basics.
-
+Require Import Coq.Lists.List.
 
 Class EqDec {v : Set} := {
   eq_decide (x y : v) : {x = y} + {x <> y}
 }.
 
 Section term.
+Variable v : Set.
 
-Context { v : Set }.
-
-Inductive term : Set :=
-| var ( _ : v)
-| app (_ : term) (_ : term)
+Inductive term :=
+| var (_ : v)
+| pass (_ : term) (_ : term)
 | lam (_ : v -> term)
 .
 
+Inductive term' :=
+| hole
+| lpass (_ : term') (_ : term).
 
-Declare Custom Entry lam.
-Notation "_{ e }" := e (e custom lam at level 99).
-Notation "x" := x (in custom lam at level 0, x constr at level 0).
-Notation "f x" := (app f x) (in custom lam at level 1, left associativity).
-Notation "'fun' x => y" :=
-  (lam (fun x => y)) (in custom lam at level 90,
-                     x ident,
-                     y custom lam at level 99,
-                     left associativity).
-Notation "( x )" := x (in custom lam, x at level 99).
-Notation "${ x }" := x (in custom lam, x constr at level 0).
-Coercion var : v >-> term.
+Section applyk.
+Variable repl : term.
+Fixpoint applyk k :=
+match k with
+| hole => repl
+| lpass k e => pass (applyk k) e
+end.
+End applyk.
 
-Definition heap := v -> term.
+Record ck := { control : term ; kont : term' }. 
+Notation " 'E' [ h | e ]" := {| control := e ; kont := h |}.
 
-Record state := {
-  control:term ;
-  store:heap
-}.
+Definition environ := v -> term.
+
+Context `{EqDec v}.
+
+
+Record state := { assumption : environ ; consequence : ck }.
+
+Notation "g |- ck" := {| assumption := g ; consequence := ck |} (at level 70).
+
+Definition put old x e : environ:=
+fun x' => if eq_decide x x' then e else old x'.
+
+Reserved Notation "e0 ~> e1 " (at level 80).
+
+Variant step : state -> state -> Prop := 
+| step_var env x k :
+   env |- E[k|var x] ~> env |- E[k|env x]
+
+| step_pass env k e0 e1 :
+   env |- E[k|pass e0 e1] ~> env |- E[lpass k e1|e0]
+
+| step_lam env k f x e:
+   env |- E[lpass k e |lam f] ~> put env x e |- E[k|f x]
+where "e ~> e'" := (step e e').
+
+Definition valid (f : state -> option state) := forall c e k,
+exists c' e' k',
+(f (e |- E[k|c]) = Some (e |- E[k|c])) -> (e |- E[k|c]) ~> (e' |- E[k'|c']).
+
+(* FIXMEe rule out infinite loops *)
 
 CoInductive font : Set := { head : v ; left : font ; right : font }.
 
-Definition insert `{EqDec v} x e s : heap := fun x' =>
-  if eq_decide x x' then e else s x'.
-
-Fixpoint cbn `{EqDec v} (xs : font) (e : term) (s0 : heap) : option state :=
+Fixpoint go (fnt : font) g k e :=
 match e with
-| var x => Some {| control := s0 x ; store := s0 |}
-| _{ ${lam f} e1 } =>
-  let v := head xs in
-  let y := f v in
-  Some {| control := y ; store := insert v e1 s0 |}
-| _{ e0 e1 } =>
-  if cbn (left xs) e0 s0 is Some st
-  then
-    let e'0 := control st in
-    let s1 := store st in
-    Some {| control := _{ e'0 e1 } ; store := s1 |}
-  else None
-| _ => None
+| var x => Some (g |- E[k | g x])
+
+| pass e0 e1 => Some (g |- E[lpass k e1 | e0])
+| lam f =>
+   if k is lpass k' e0
+   then
+     let x := head fnt in
+     go (right fnt) (put g x e0) k' (f x)
+   else None
 end.
 
-(* Define a one-hole context type *)
-Inductive term' : Set :=
-| hole : term'
-| lapp' : term' -> term -> term'
-| rapp' : term -> term' -> term'
-| lam' : (v -> term') -> term'.
-
-Section substitution.
-Variable h : term.
-Fixpoint subst i :=
-match i with
-| hole => h
-| lapp' i0 e1 => _{ ${subst i0 } e1 }
-| rapp' e0 i1 => _{ e0 ${ subst i1 } }
-| lam' i0 => lam (fun x => subst (i0 x))
-end.
-End substitution.
-
-Notation "'E' [ h | e ]" := (subst e h) (e custom lam).
-
-Reserved Notation "e ~> e'" (at level 50).
-Inductive step `{EqDec v} : state -> state -> Prop :=
-| step_load h s (x:v) :
-    {| control := E[h|x] ; store := s |} ~> {| control := E[h|${s x}] ; store := s |}
-| step_beta h s f x e1 :
-    {| control := E[h| _{ ${lam f} e1 }] ; store := s |} ~> {| control := E[h| ${f x}] ; store := insert x e1 s |}
-where "e ~> e'" := (step e e').
-
-Reserved Notation "e ~> e'" (at level 50).
-
-Definition valid `{EqDec v} f := forall x y, f x = Some y -> x ~> y.
-
-Definition strategy `{EqDec v} := { f | valid f }.
-
-Definition fail `{EqDec v} : strategy.
-eexists.
-Unshelve.
-2: {
-  intro.
-  apply None.
-}
-easy.
-Defined.
-
-Definition cbn' `{EqDec v} xs s0 := cbn xs (control s0) (store s0).
-Definition cbn_valid `{EqDec v} xs : valid (cbn' xs).
-intro.
-intro.
-case y.
-destruct x.
+Definition go_valid `{EqDec v} fnt : valid (fun st => go fnt (assumption st) (kont (consequence st)) (control (consequence st))).
+intros c e k.
 cbn.
-intros.
-induction control0.
-1: {
-  inversion H0.
-  apply (step_load hole).
-}
-2: {
-     discriminate.
-   }
-
-Admitted.
+induction c.
++ cbn.
+  eexists (e v0).
+  eexists e.
+  eexists k.
+  intro.
+  apply (step_var e v0 k).
++ cbn.
+  eexists c1.
+  eexists e.
+  eexists (lpass k c2).
+  intro.
+  apply (step_pass e k c1 c2).
++ cbn.
+  induction k.
+  * eexists (lam (fun x => var x)).
+    eexists e.
+    eexists hole.
+    discriminate.
+  * eexists (t (head fnt)).
+    eexists (put e (head fnt) t0).
+    eexists k.
+    intro.
+    eapply (step_lam e k t (head fnt) t0).
+Qed.
 
 End term.
 
@@ -136,4 +119,4 @@ Extract Inductive option => "Prelude.Maybe" ["Prelude.Just" "Prelude.Nothing"].
 Extract Inductive prod => "(,)" ["(,)"].
 Extract Inductive unit => "()" ["()"].
 Extract Inductive list => "[]" ["[]" "(:)"].
-Extraction "./Step.hs" cbn.
+Extraction "./Step.hs" go.

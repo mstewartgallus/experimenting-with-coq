@@ -8,16 +8,25 @@ import Prelude hiding (head)
 
 main :: IO ()
 main = do
-  s0 <- fontTags
-  loop s0 identity (\_ -> undefined)
+  s <- fontTags
+  y <- loop (right s) emptyEnv Hole identity
+  putStrLn (pretty (left s) y)
 
 identity :: Term v
-identity = App (Lam $ \x -> (Var x)) (Lam $ \y -> (Var y))
+identity = Pass (Lam $ \x -> (Var x)) (Lam $ \y -> (Var y))
 
-right :: (Font a1) -> Font a1
-right f =
+left :: (Font a1) -> Font a1
+left f =
   case f of
     Build_font _ left0 _ -> left0
+
+prettyHole :: Show v => Font v -> Term' v -> String
+prettyHole fnt k = case k of
+  Hole -> "."
+  Lpass e_f e_x ->
+    let l = left fnt
+        r = right fnt
+     in "(" ++ prettyHole l e_f ++ " " ++ pretty r e_x ++ ")"
 
 pretty :: Show v => Font v -> Term v -> String
 pretty fnt expr = case expr of
@@ -26,19 +35,23 @@ pretty fnt expr = case expr of
     let x = head fnt
         l = left fnt
      in "(λ v" ++ show x ++ ". " ++ pretty l (f x) ++ ")"
-  App e_f e_x ->
+  Pass e_f e_x ->
     let l = left fnt
         r = right fnt
      in "(" ++ pretty l e_f ++ " " ++ pretty r e_x ++ ")"
 
-loop :: (Show v, Eq v) => Font v -> Term v -> Heap v -> IO ()
-loop fnt e0 s0 = do
+emptyEnv :: v -> Term v
+emptyEnv _ = error "should never happen"
+
+loop :: (Show v, Eq v) => Font v -> Environ v -> Term' v -> Term v -> IO (Term v)
+loop fnt e0 k0 c0 = do
   let l = left fnt
   let r = right fnt
-  putStrLn (pretty l e0)
-  case cbn (==) l e0 s0 of
-    Just (Build_state e1 s1) -> loop r e1 s1
-    Nothing -> return ()
+  putStrLn (prettyHole l k0)
+  putStrLn (pretty l c0)
+  case go (==) l e0 k0 c0 of
+    Just (Build_state e1 (Build_ck c1 k1)) -> loop r e1 k1 c1
+    Nothing -> return c0
 
 data Tag = Tag Int (IORef ())
 

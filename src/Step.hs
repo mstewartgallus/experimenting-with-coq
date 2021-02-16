@@ -12,23 +12,26 @@ eq_decide eqDec =
 
 data Term v =
    Var v
- | App (Term v) (Term v)
+ | Pass (Term v) (Term v)
  | Lam (v -> Term v)
 
-type Heap v = v -> Term v
+data Term' v =
+   Hole
+ | Lpass (Term' v) (Term v)
+
+data Ck v =
+   Build_ck (Term v) (Term' v)
+
+type Environ v = v -> Term v
 
 data State v =
-   Build_state (Term v) (Heap v)
+   Build_state (Environ v) (Ck v)
 
-control :: (State a1) -> Term a1
-control s =
-  case s of {
-   Build_state control0 _ -> control0}
-
-store :: (State a1) -> Heap a1
-store s =
-  case s of {
-   Build_state _ store0 -> store0}
+put :: (EqDec a1) -> (a1 -> Term a1) -> a1 -> (Term a1) -> Environ a1
+put h old x e x' =
+  case eq_decide h x x' of {
+   Prelude.True -> e;
+   Prelude.False -> old x'}
 
 data Font v =
    Build_font v (Font v) (Font v)
@@ -38,32 +41,20 @@ head f =
   case f of {
    Build_font head0 _ _ -> head0}
 
-left :: (Font a1) -> Font a1
-left f =
+right :: (Font a1) -> Font a1
+right f =
   case f of {
-   Build_font _ left0 _ -> left0}
+   Build_font _ _ right0 -> right0}
 
-insert :: (EqDec a1) -> a1 -> (Term a1) -> (a1 -> Term a1) -> Heap a1
-insert h x e s x' =
-  case eq_decide h x x' of {
-   Prelude.True -> e;
-   Prelude.False -> s x'}
-
-cbn :: (EqDec a1) -> (Font a1) -> (Term a1) -> (Heap a1) -> Prelude.Maybe
-       (State a1)
-cbn h xs e s0 =
+go :: (EqDec a1) -> (Font a1) -> (Environ a1) -> (Term' a1) -> (Term 
+      a1) -> Prelude.Maybe (State a1)
+go h fnt g k e =
   case e of {
-   Var x -> Prelude.Just (Build_state (s0 x) s0);
-   App e0 e1 ->
-    case e0 of {
-     Lam f ->
-      let {v = head xs} in
-      let {y = f v} in Prelude.Just (Build_state y (insert h v e1 s0));
-     _ ->
-      case cbn h (left xs) e0 s0 of {
-       Prelude.Just st ->
-        let {e'0 = control st} in
-        let {s1 = store st} in Prelude.Just (Build_state (App e'0 e1) s1);
-       Prelude.Nothing -> Prelude.Nothing}};
-   Lam _ -> Prelude.Nothing}
+   Var x -> Prelude.Just (Build_state g (Build_ck (g x) k));
+   Pass e0 e1 -> Prelude.Just (Build_state g (Build_ck e0 (Lpass k e1)));
+   Lam f ->
+    case k of {
+     Hole -> Prelude.Nothing;
+     Lpass k' e0 ->
+      let {x = head fnt} in go h (right fnt) (put h g x e0) k' (f x)}}
 
