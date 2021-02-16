@@ -4,6 +4,7 @@ import Data.IORef
 import Data.Word (Word64)
 import Step
 import System.IO.Unsafe (unsafeInterleaveIO)
+import Text.Show
 import Prelude hiding (head)
 
 main :: IO ()
@@ -28,6 +29,9 @@ prettyHole fnt k = case k of
         r = right fnt
      in "(" ++ prettyHole l e_f ++ " " ++ pretty r e_x ++ ")"
 
+prettyHeap :: Show v => Font v -> Heap v -> String
+prettyHeap fnt h = showListWith (\(k, v) s -> (show k ++ " → " ++ pretty fnt v) ++ s) h ""
+
 pretty :: Show v => Font v -> Term v -> String
 pretty fnt expr = case expr of
   Var x -> "v" ++ show x
@@ -44,8 +48,10 @@ loop :: (Show v, Eq v) => Font v -> Heap v -> Stack v -> Term v -> IO (Term v)
 loop fnt e0 k0 c0 = do
   let l = left fnt
   let r = right fnt
-  putStrLn (prettyHole l k0)
-  putStrLn (pretty l c0)
+  putStrLn ("Heap:\t" ++ (prettyHeap l e0))
+  putStrLn ("Stack:\t" ++ (prettyHole l k0))
+  putStrLn ("Expr:\t" ++ (pretty l c0))
+  putStrLn ""
   case go (==) l e0 k0 c0 of
     Just ((e1, k1), c1) -> loop r e1 k1 c1
     Nothing -> return c0
