@@ -9,7 +9,7 @@ import Prelude hiding (head)
 main :: IO ()
 main = do
   s <- fontTags
-  y <- loop (right s) emptyEnv Hole identity
+  y <- loop (right s) [] Hole identity
   putStrLn (pretty (left s) y)
 
 identity :: Term v
@@ -20,7 +20,7 @@ left f =
   case f of
     Build_font _ left0 _ -> left0
 
-prettyHole :: Show v => Font v -> Term' v -> String
+prettyHole :: Show v => Font v -> Stack v -> String
 prettyHole fnt k = case k of
   Hole -> "."
   Lpass e_f e_x ->
@@ -40,17 +40,14 @@ pretty fnt expr = case expr of
         r = right fnt
      in "(" ++ pretty l e_f ++ " " ++ pretty r e_x ++ ")"
 
-emptyEnv :: v -> Term v
-emptyEnv _ = error "should never happen"
-
-loop :: (Show v, Eq v) => Font v -> Heap v -> Term' v -> Term v -> IO (Term v)
+loop :: (Show v, Eq v) => Font v -> Heap v -> Stack v -> Term v -> IO (Term v)
 loop fnt e0 k0 c0 = do
   let l = left fnt
   let r = right fnt
   putStrLn (prettyHole l k0)
   putStrLn (pretty l c0)
   case go (==) l e0 k0 c0 of
-    Just (Build_state e1 (Build_ck c1 k1)) -> loop r e1 k1 c1
+    Just ((e1, k1), c1) -> loop r e1 k1 c1
     Nothing -> return c0
 
 data Tag = Tag Int (IORef ())

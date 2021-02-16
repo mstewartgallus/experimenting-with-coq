@@ -15,19 +15,9 @@ data Term v =
  | Pass (Term v) (Term v)
  | Lam (v -> Term v)
 
-data Term' v =
-   Hole
- | Lpass (Term' v) (Term v)
+type Store v = v -> Term v
 
-data Ck v =
-   Build_ck (Term v) (Term' v)
-
-type Heap v = v -> Term v
-
-data State v =
-   Build_state (Heap v) (Ck v)
-
-put :: (EqDec a1) -> (a1 -> Term a1) -> a1 -> (Term a1) -> Heap a1
+put :: (EqDec a1) -> (a1 -> Term a1) -> a1 -> (Term a1) -> Store a1
 put h old x e x' =
   case eq_decide h x x' of {
    Prelude.True -> e;
@@ -46,15 +36,34 @@ right f =
   case f of {
    Build_font _ _ right0 -> right0}
 
-go :: (EqDec a1) -> (Font a1) -> (Heap a1) -> (Term' a1) -> (Term a1) ->
+data Stack v =
+   Hole
+ | Lpass (Stack v) (Term v)
+
+type Heap v = [] ((,) v (Term v))
+
+arbitrary :: Term a1
+arbitrary =
+  Lam (\x -> Var x)
+
+lookup :: (EqDec a1) -> (Heap a1) -> Store a1
+lookup h hp =
+  case hp of {
+   [] -> (\_ -> arbitrary);
+   (:) p t -> case p of {
+               (,) x' h0 -> put h (lookup h t) x' h0}}
+
+type State v = (,) ((,) (Heap v) (Stack v)) (Term v)
+
+go :: (EqDec a1) -> (Font a1) -> (Heap a1) -> (Stack a1) -> (Term a1) ->
       Prelude.Maybe (State a1)
-go h fnt s k c =
-  case c of {
-   Var x -> Prelude.Just (Build_state s (Build_ck (s x) k));
-   Pass c0 c1 -> Prelude.Just (Build_state s (Build_ck c0 (Lpass k c1)));
+go h fnt s k e =
+  case e of {
+   Var x -> Prelude.Just ((,) ((,) s k) (lookup h s x));
+   Pass e0 e1 -> Prelude.Just ((,) ((,) s (Lpass k e1)) e0);
    Lam f ->
     case k of {
      Hole -> Prelude.Nothing;
      Lpass k' e0 ->
-      let {x = head fnt} in go h (right fnt) (put h s x e0) k' (f x)}}
+      let {x = head fnt} in go h (right fnt) ((:) ((,) x e0) s) k' (f x)}}
 
