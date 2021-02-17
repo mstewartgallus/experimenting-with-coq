@@ -14,12 +14,17 @@ main = do
   putStrLn (pretty (left s) y)
 
 identity :: Term v
-identity = Pass (Lam $ \x -> (Var x)) (Lam $ \y -> (Var y))
+identity = Pass (Lam_ $ \x -> Var x) (Lam_ $ \y -> Var y)
 
 left :: (Font a1) -> Font a1
 left f =
   case f of
     Build_font _ left0 _ -> left0
+
+right :: (Font a1) -> Font a1
+right f =
+  case f of
+    Build_font _ _ right -> right
 
 prettyHole :: Show v => Font v -> Stack v -> String
 prettyHole fnt k = case k of
@@ -35,7 +40,7 @@ prettyHeap fnt h = showListWith (\(k, v) s -> (show k ++ " → " ++ pretty fnt v
 pretty :: Show v => Font v -> Term v -> String
 pretty fnt expr = case expr of
   Var x -> "v" ++ show x
-  Lam f ->
+  Lam_ f ->
     let x = head fnt
         l = left fnt
      in "(λ v" ++ show x ++ ". " ++ pretty l (f x) ++ ")"

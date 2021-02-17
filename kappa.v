@@ -5,7 +5,7 @@ Class EqDec {v : Set} := {
 }.
 
 
-Class Term {t : Set} := {
+Class Lambda {t : Set} := {
   app : t -> t -> t ;
   lam : (t -> t) -> t
 }.
@@ -36,7 +36,7 @@ Inductive term :=
 .
 
 Coercion var : v >-> term.
-Instance term_term : @Term term := {
+Instance term_lambda : @Lambda term := {
   app := pass ;
   lam f := lam_ (fun x => f x)
 }.
@@ -109,7 +109,7 @@ end.
 
 Definition state := (heap * stack * term) %type.
 
-Fixpoint go `{EqDec v} (fnt : font) s k e : option state :=
+Definition go `{EqDec v} (fnt : font) s k e : option state :=
 match e with
 | var x => Some (s, k, lookup s x)
 
@@ -118,7 +118,7 @@ match e with
    if k is lpass k' e0
    then
      let x := head fnt in
-     go (right fnt) (cons (x, e0) s) k' (f x)
+     Some (cons (x, e0) s, k', f x)
    else None
 end.
 
@@ -138,13 +138,6 @@ End applyk.
 
 Definition to_term' k : term' := fun x => applyk x k.
 Definition to_store `{EqDec v} (s : heap) : store := lookup s.
-
-Definition models_put `{EqDec v} (h : heap) x e:
-put (to_store h) x e = to_store (cons (x, e) h).
-induction h.
-- trivial.
-- trivial.
-Qed.
 
 Definition go_to_model `{EqDec v} (st : state) : model :=
 match st with
@@ -167,17 +160,15 @@ induction t.
   apply (step_pass (to_store h) (to_term' s) t1 t2).
 + cbn.
   induction s.
-  * (* I'm not precisely sure why we have to introduce an arbitrary term here but identity works well enough. *)
-    eexists (h, hole, arbitrary).
+  - eexists (h, hole, arbitrary).
+    intros.
     discriminate.
-  * pose (x := head fnt).
+  - pose (x := head fnt).
     pose (h' := cons (x, t0) h).
     eexists (h', s, t x).
-    intro.
-    cbn.
+    intros.
     pose (str := to_store h).
     pose (str' := to_store h').
-    rewrite -> (models_put h x t0).
     eapply (step_lam str (to_term' s) t x t0).
 Qed.
 
