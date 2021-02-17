@@ -13,8 +13,8 @@ main = do
   y <- loop (right s) [] Hole identity
   putStrLn (pretty (left s) y)
 
-identity :: Term v
-identity = Pass (Lam_ $ \x -> Var x) (Lam_ $ \y -> Var y)
+identity :: Ast v
+identity = Ast_app (Ast_lam $ \x -> Ast_var x) (Ast_lam $ \y -> Ast_var y)
 
 left :: (Font a1) -> Font a1
 left f =
@@ -37,19 +37,19 @@ prettyHole fnt k = case k of
 prettyHeap :: Show v => Font v -> Heap v -> String
 prettyHeap fnt h = showListWith (\(k, v) s -> (show k ++ " → " ++ pretty fnt v) ++ s) h ""
 
-pretty :: Show v => Font v -> Term v -> String
+pretty :: Show v => Font v -> Ast v -> String
 pretty fnt expr = case expr of
-  Var x -> "v" ++ show x
-  Lam_ f ->
+  Ast_var x -> "v" ++ show x
+  Ast_lam f ->
     let x = head fnt
         l = left fnt
      in "(λ v" ++ show x ++ ". " ++ pretty l (f x) ++ ")"
-  Pass e_f e_x ->
+  Ast_app e_f e_x ->
     let l = left fnt
         r = right fnt
      in "(" ++ pretty l e_f ++ " " ++ pretty r e_x ++ ")"
 
-loop :: (Show v, Eq v) => Font v -> Heap v -> Stack v -> Term v -> IO (Term v)
+loop :: (Show v, Eq v) => Font v -> Heap v -> Stack v -> Ast v -> IO (Ast v)
 loop fnt e0 k0 c0 = do
   let l = left fnt
   let r = right fnt

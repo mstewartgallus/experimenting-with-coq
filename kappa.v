@@ -22,11 +22,8 @@ Notation "'fun' x => y" :=
 Notation "( x )" := x (in custom lam, x at level 99).
 Notation "${ x }" := x (in custom lam, x constr at level 0).
 
-Section term.
+Section model.
 
-(* I define terms in a parameteric higher order abstract style.
-   As we go along variables become a sort of address/pointer.
- *)
 Variable v : Set.
 
 Inductive term :=
@@ -88,33 +85,50 @@ exists b,
 tick a = Some b ->
 to a ~> to b.
 
+Inductive ast :=
+| ast_var (_ : v)
+| ast_app (_ : ast) (_ : ast)
+| ast_lam (_ : v -> ast)
+.
+
+Coercion ast_var : v >-> ast.
+Instance ast_lambda : @Lambda ast := {
+  app := ast_app ;
+  lam f := ast_lam (fun x => f x)
+}.
+
+
 (* We use an old trick of lazily threading through new variables *)
 CoInductive font : Set := { head : v ; left : font ; right : font }.
 
 Inductive stack : Set :=
 | hole
-| lpass (_ : stack) (_ : term).
+| lpass (_ : stack) (_ : ast).
 
 (* We currently leak memory *)
-Definition heap := list (v * term).
+Definition heap := list (v * ast).
 
-Definition arbitrary := _{ fun x => x }.
+Definition arbitrary : ast := _{ fun x => x }.
 
-(* We use a funny style to make proving equivalence easier *)
-Fixpoint lookup `{EqDec v} (hp : heap) : store :=
+Section lookup.
+Context `{EqDec v}.
+Fixpoint lookup (hp : heap) : v -> ast :=
 match hp with
-| cons (x', h) t => put (lookup t) x' h
+| cons (x', h) t =>
+   let t' := lookup t in
+   fun x => if eq_decide x x' then h else t' x
 | nil => fun _ => arbitrary
 end.
+End lookup.
 
-Definition state := (heap * stack * term) %type.
+Definition state := (heap * stack * ast) %type.
 
 Definition go `{EqDec v} (fnt : font) s k e : option state :=
 match e with
-| var x => Some (s, k, lookup s x)
+| ast_var x => Some (s, k, lookup s x)
 
-| pass e0 e1 => Some (s, lpass k e1, e0)
-| lam_ f =>
+| ast_app e0 e1 => Some (s, lpass k e1, e0)
+| ast_lam f =>
    if k is lpass k' e0
    then
      let x := head fnt in
@@ -126,22 +140,83 @@ Definition go' `{EqDec v} fnt st :=
 match st with
 | (s, k, e) => go fnt s k e
 end.
+Fixpoint to_term e :=
+match e with
+| ast_var x => var x
+| ast_app e0 e1 => app (to_term e0) (to_term e1)
+| ast_lam f => lam_ (fun x => to_term (f x))
+end.
 
 Section applyk.
 Variable h : term.
 Fixpoint applyk k :=
 match k with
 | hole => h
-| lpass k e => pass (applyk k) e
+| lpass k e => pass (applyk k) (to_term e)
 end.
 End applyk.
 
 Definition to_term' k : term' := fun x => applyk x k.
-Definition to_store `{EqDec v} (s : heap) : store := lookup s.
+
+Fixpoint to_store `{EqDec v} (s : heap) : store :=
+match s with
+| cons (x, h) t =>
+  let t' := to_store t in
+  let h' := to_term h in
+  put t' x h'
+| nil => fun _ => _{ fun x => x }
+end.
+
+Definition models_put `{EqDec v} (h : heap) x (e : ast):
+put (to_store h) x (to_term e) = to_store (cons (x, e) h).
+induction h.
+- cbn.
+  trivial.
+- cbn.
+  trivial.
+Qed.
+
+Definition tautological `{EqDec v} x : if eq_decide x x then True else False.
+case (eq_decide x x).
+trivial.
+intro.
+contradiction.
+Qed.
+
+(* really messy *)
+Definition models_store `{EqDec v} h : forall x, to_store h x = to_term (lookup h x).
+induction h.
+- cbn.
+  trivial.
+- destruct a.
+  intro.
+  cbv.
+  rewrite -> IHh.
+  rewrite <- IHh.
+  rewrite -> IHh.
+  destruct H.
+  case (eq_decide0 v0 x).
+  +
+    intro.
+    rewrite -> e.
+    cbv.
+    case (eq_decide0 x x).
+    * intro.
+      trivial.
+    * intro.
+      contradiction.
+  + intro.
+    case (eq_decide0 x v0).
+    * intro.
+      symmetry in e.
+      contradiction.
+    * intro.
+      trivial.
+      Qed.
 
 Definition go_to_model `{EqDec v} (st : state) : model :=
 match st with
-| (s, k , e) => to_store s |- E[to_term' k|e]
+| (s, k , e) => to_store s |- E[to_term' k| ${to_term e} ]
 end.
 
 Definition go_valid `{EqDec v} fnt : valid _ go_to_model (go' fnt).
@@ -149,30 +224,33 @@ intro a.
 destruct a, p.
 cbn.
 (* Perform induction over all possible cases of control, then all cases of the stack *)
-induction t.
+induction a.
 + cbn.
-  eexists (h, s, _).
+  eexists (h, s, lookup h v0).
   intro.
-  eapply (step_var).
+  cbn.
+  rewrite <- (models_store _ _).
+  eapply (step_var (to_store h) v0 (to_term' s)).
 + cbn.
-  eexists (h, lpass s t2, t1).
+  eexists (h, lpass s a2, a1).
   intro.
-  apply (step_pass (to_store h) (to_term' s) t1 t2).
+  apply (step_pass (to_store h) (to_term' s) (to_term a1) (to_term a2)).
 + cbn.
   induction s.
   - eexists (h, hole, arbitrary).
     intros.
     discriminate.
   - pose (x := head fnt).
-    pose (h' := cons (x, t0) h).
-    eexists (h', s, t x).
+    pose (h' := cons (x, a0) h).
+    eexists (h', s, a x).
     intros.
     pose (str := to_store h).
     pose (str' := to_store h').
-    eapply (step_lam str (to_term' s) t x t0).
+    cbn.
+    eapply (step_lam str (to_term' s) (fun y => to_term (a y)) x (to_term a0)).
 Qed.
 
-End term.
+End model.
 
 (* My language of choice is Haskell but a runtime of Ocaml or Scheme might be preferable. Not sure. *)
 Require Extraction.
